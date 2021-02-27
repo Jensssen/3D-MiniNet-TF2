@@ -13,15 +13,12 @@ Date:
 data_config = {
     "train": "../boundingbox/avod/rangeimage/pnl_train.txt",
     "validation": "../boundingbox/avod/rangeimage/pnl_val.txt",
-    "tfrecord_train": "data/pnl_train.tfrecord",
-    "tfrecord_val": "data/pnl_val.tfrecord",
+    "train_file_list_name": "./data/train",
+    "val_file_list_name": "./data/val",
     "augmentation": ["original"],
     "n_size": [3, 3],
     "channels": "xyzdr",
-    "pointnet": True
-}
-
-network_config = {
+    "pointnet": True,
     "n_classes": 4,
     "img_width": 512,
     "img_height": 64
