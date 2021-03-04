@@ -6,7 +6,7 @@ import tensorflow as tf
 
 # imports Settings manager
 import data_loader
-from config.config import data_config
+from config.config import config
 
 # SQUEEZESEG DATASET
 # Channels description:
@@ -26,7 +26,7 @@ def make_npy_files():
     for dataset in ["train", "val"]:
 
         # Get path
-        dataset_output = data_config["train_file_list_name"] if dataset == "train" else data_config[
+        dataset_output = config["train_file_list_name"] if dataset == "train" else config[
             "val_file_list_name"]
 
         if not os.path.exists(dataset_output):
@@ -46,7 +46,7 @@ def make_npy_files():
         line_num = 1
         for file in file_list:
 
-            augmentation_list = ["normal"] if dataset is "val" else data_config["augmentation"]
+            augmentation_list = ["normal"] if dataset is "val" else config["augmentation"]
 
             # Augmentation settings
             for aug_type in augmentation_list:
@@ -61,13 +61,13 @@ def make_npy_files():
 
                 # data = data_loader.interp_data(data[:,:,0:5], mask)
 
-                p, n = data_loader.pointnetize(data[:, :, 0:5], n_size=data_config["n_size"])
+                p, n = data_loader.pointnetize(data[:, :, 0:5], n_size=config["n_size"])
                 groundtruth = data_loader.apply_mask(data[:, :, 5], mask)
 
                 # Compute weigthed mask
                 contours = np.zeros((mask.shape[0], mask.shape[1]), dtype=bool)
 
-                if np.amax(groundtruth) > data_config["n_classes"] - 1:
+                if np.amax(groundtruth) > config["n_classes"] - 1:
                     print("[WARNING] There are more classes than expected !")
 
                 for c in range(1, int(np.amax(groundtruth)) + 1):
@@ -81,13 +81,13 @@ def make_npy_files():
                 dist = cv2.distanceTransform((1 - contours).astype(np.uint8), cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
 
                 # Create output label for training
-                label = np.zeros((groundtruth.shape[0], groundtruth.shape[1], data_config["n_classes"] + 2))
+                label = np.zeros((groundtruth.shape[0], groundtruth.shape[1], config["n_classes"] + 2))
                 for y in range(groundtruth.shape[0]):
                     for x in range(groundtruth.shape[1]):
                         label[y, x, int(groundtruth[y, x])] = 1.0
 
-                label[:, :, data_config["n_classes"]] = dist
-                label[:, :, data_config["n_classes"] + 1] = mask
+                label[:, :, config["n_classes"]] = dist
+                label[:, :, config["n_classes"] + 1] = mask
 
                 np.save(os.path.join(os.path.join(dataset_output, "neighbors"), file[:-1] + ".npy"), n)
                 np.save(os.path.join(os.path.join(dataset_output, "points"), file[:-1] + ".npy"), p)
