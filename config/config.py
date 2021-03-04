@@ -10,7 +10,7 @@ Date:
 
 """
 
-data_config = {
+config = {
     "train": "../boundingbox/avod/rangeimage/pnl_train.txt",
     "validation": "../boundingbox/avod/rangeimage/pnl_val.txt",
     "train_file_list_name": "./data/train",
@@ -21,10 +21,8 @@ data_config = {
     "pointnet": True,
     "n_classes": 4,
     "img_width": 512,
-    "img_height": 64
-}
-
-train_config = {
+    "img_height": 64,
+    "epochs": 10,
     "unet_depth": 5,
     "batch_size": 8,
     "learning_rate": 0.0003,
