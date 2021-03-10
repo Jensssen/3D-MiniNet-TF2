@@ -34,9 +34,7 @@ class MiniNet3D:
         return x
 
     def upsampling(self, inputs, scale):
-        return tf.compat.v1.image.resize_bilinear(inputs,
-                                                  size=[tf.shape(inputs)[1] * scale, tf.shape(inputs)[2] * scale],
-                                                  align_corners=True, name="lolololololol")
+        return tf.keras.layers.UpSampling2D(size=(2, 2), data_format=None, interpolation='nearest')(inputs)
 
     def residual_separable(self, input, n_filters, is_training, dropout=0.3, dilation=1, l2=None, name="down"):
         x = tf.keras.layers.SeparableConv2D(n_filters, (3, 3), strides=1, padding='same', activation=None,
