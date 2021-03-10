@@ -16,16 +16,23 @@ import os
 
 import numpy as np
 import tensorflow as tf
+# from augmentation import augmentation
+from tensorflow.python.framework.ops import disable_eager_execution
 
+from config.config import config
 from datasets.semanticKitti import DataGenerator
 from model.mininet3d import MiniNet3D
 from train_utils import _train_on_batch, _validate_on_batch
-from config.config import config
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+# os.environ["CUDA_VISIBLE_DEVICES"]="-1"
 
 
-# from augmentation import augmentation
+physical_devices = tf.config.list_physical_devices('GPU')
+try:
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+except:
+    # Invalid device or cannot modify virtual devices once initialized.
+    pass
 
 
 # Takes a sequence of channels and returns the corresponding indices in the rangeimage
@@ -151,13 +158,13 @@ def train():
     # Generators
     training_generator = DataGenerator(list_file_names=partition['train'],
                                        dim=(64, 512, 1, 5),
-                                       batch_size=4,
+                                       batch_size=config['batch_size'],
                                        n_classes=6,
                                        shuffle=True)
 
     validation_generator = DataGenerator(list_file_names=partition['validation'],
                                          dim=(64, 512, 1, 5),
-                                         batch_size=4,
+                                         batch_size=config['batch_size'],
                                          n_classes=6,
                                          shuffle=True)
 
@@ -165,8 +172,7 @@ def train():
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=config["learning_rate"])
 
-    # train_on_batch = tf.function(_train_on_batch)
-    train_on_batch = _train_on_batch
+    train_on_batch = tf.function(_train_on_batch)
     validate_on_batch = tf.function(_validate_on_batch)
 
     # start training

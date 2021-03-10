@@ -24,7 +24,7 @@ config = {
     "img_height": 64,
     "epochs": 10,
     "unet_depth": 5,
-    "batch_size": 8,
+    "batch_size": 4,
     "learning_rate": 0.0003,
     "lr_decay_interval": 1000000,
     "lr_decay_value": 0.1,
