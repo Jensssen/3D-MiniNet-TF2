@@ -17,7 +17,7 @@ from config.config import config
 # 4: DEPTH
 # 5: LABEL
 
-semantic_base = "/home/IBEO.AS/soe/Downloads/lidar_2d/"
+semantic_base = "./data/lidar_2d/"
 
 
 # Generates npy files for training
