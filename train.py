@@ -145,7 +145,7 @@ def train():
     for dataset in ["train", "val"]:
         if dataset == "val":
             validation_file_list = open("./data/semantic_val.txt", "r")
-            validation_file_list = [line.split(',') for line in validation_file_list.readlines()]
+            validation_file_list = [line.replace("\n", "") for line in validation_file_list.readlines()]
 
         else:
             train_file_list = open("./data/semantic_train.txt", "r")
@@ -159,13 +159,15 @@ def train():
                                        dim=(64, 512, 1, 5),
                                        batch_size=config['batch_size'],
                                        n_classes=6,
-                                       shuffle=True)
+                                       shuffle=True,
+                                       data_split="train")
 
     validation_generator = DataGenerator(list_file_names=partition['validation'],
                                          dim=(64, 512, 1, 5),
                                          batch_size=config['batch_size'],
                                          n_classes=6,
-                                         shuffle=True)
+                                         shuffle=False,
+                                         data_split="val")
 
     model = MiniNet3D(num_classes=config['n_classes'], input_dim=(2048, 16, 11)).model
 
@@ -173,7 +175,7 @@ def train():
 
     train_on_batch = tf.function(_train_on_batch)
     validate_on_batch = tf.function(_validate_on_batch)
-
+    best_validation_loss = 1000
     # start training
     for epoch in range(config['epochs']):
         print(f'Epoch_number: {epoch}')
@@ -190,10 +192,12 @@ def train():
         counter = 0
         for idx in range(validation_generator.__len__()):
             input_final, x, y = validation_generator.__getitem__(idx)
-            softmax, loss = validate_on_batch(x=[input_final, x], y=y, model=model, optimizer=optimizer)
+            softmax, loss = validate_on_batch(x=[input_final, x], y=y, model=model)
             epoch_val_loss += loss.numpy()
             counter += 1
         print(epoch_val_loss / counter)
+        if epoch_val_loss/counter < best_validation_loss:
+            tf.saved_model.save(model, "./saved_model")
 
 
 if __name__ == "__main__":

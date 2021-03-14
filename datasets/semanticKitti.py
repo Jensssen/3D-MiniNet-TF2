@@ -5,7 +5,7 @@ import tensorflow as tf
 class DataGenerator(tf.keras.utils.Sequence):
     'Generates data for Keras'
 
-    def __init__(self, list_file_names, batch_size=32, dim=(32, 32, 32), n_classes=10, shuffle=True):
+    def __init__(self, list_file_names, batch_size=32, dim=(32, 32, 32), n_classes=10, shuffle=True, data_split="train"):
         'Initialization'
         self.dim = dim
         self.batch_size = batch_size
@@ -13,6 +13,7 @@ class DataGenerator(tf.keras.utils.Sequence):
         self.n_classes = n_classes
         self.shuffle = shuffle
         self.on_epoch_end()
+        self.data_split = data_split
 
     def __len__(self):
         'Denotes the number of batches per epoch'
@@ -34,7 +35,7 @@ class DataGenerator(tf.keras.utils.Sequence):
     def on_epoch_end(self):
         'Updates indexes after each epoch'
         self.indexes = np.arange(len(self.list_file_names))
-        if self.shuffle == True:
+        if self.shuffle:
             np.random.shuffle(self.indexes)
 
     def __data_generation(self, list_file_names_temp):
@@ -46,10 +47,10 @@ class DataGenerator(tf.keras.utils.Sequence):
         for i, ID in enumerate(list_file_names_temp):
             # Store sample
 
-            x[i,] = np.load('./data/train/points/' + ID + '.npy')
+            x[i,] = np.load(f'./data/{self.data_split}/points/' + ID + '.npy')
 
             # Store class
-            y[i,] = np.load('./data/train/labels/' + ID + '.npy')
+            y[i,] = np.load(f'./data/{self.data_split}/labels/' + ID + '.npy')
 
         x = np.float32(x)
         y = np.float32(y)
