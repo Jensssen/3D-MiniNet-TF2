@@ -222,9 +222,10 @@ class MiniNet3D:
 
         x = self.conv_layer(x, (3, 3), self.num_class, train_logical, 'logits')
 
-        y = tf.identity(x, name='y')
+        logits = tf.identity(x, name='y')
+        softmax = tf.nn.softmax(logits)
 
-        self.model = tf.keras.Model(inputs=[final_input, x_input], outputs=[y])
+        self.model = tf.keras.Model(inputs=[final_input, x_input], outputs=[logits, softmax])
 
         if verbose:
             self.model.summary()

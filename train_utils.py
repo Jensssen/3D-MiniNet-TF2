@@ -30,21 +30,21 @@ def _train_on_batch(x, y, model, optimizer):
 
     """
     with tf.GradientTape() as tape:
-        pred = model(x, training=True)  # model_output is a list of [softmax, argmax, logits]
-        loss = u_net_loss(pred, y)
+        model_output = model(x, training=True)  # model_output is a list of [softmax, argmax, logits]
+        loss = u_net_loss(model_output[0], y)
 
     gradients = tape.gradient(loss, model.trainable_variables)
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
-    return pred, loss
+    return model_output[1], loss
 
 
-def _validate_on_batch(images, labels, model):
+def _validate_on_batch(x, y, model):
     """
 
     Args:
-        input_img: input images, 4-D Tensor of shape `[batch, height, width, num_channels] from the validation data set
-        labels: tensor of true targets, 4-D Tensor of shape `[batch, height, width, num_output_class]`
+        x: input images, 4-D Tensor of shape `[batch, height, width, num_channels] from the validation data set
+        y: tensor of true targets, 4-D Tensor of shape `[batch, height, width, num_output_class]`
         model: tensorflow model
         loss_function: the loss function to compute
 
@@ -53,10 +53,10 @@ def _validate_on_batch(images, labels, model):
         loss:  scalar loss value
 
     """
-    pred = model(images, training=False)
-    loss = u_net_loss(pred, labels)
+    model_output = model(x, training=False)
+    loss = u_net_loss(model_output[0], y)
 
-    return pred, loss
+    return model_output[1], loss
 
 
 # Returns slices of a tensor
