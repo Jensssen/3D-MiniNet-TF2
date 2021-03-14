@@ -22,7 +22,7 @@ config = {
     "n_classes": 4,
     "img_width": 512,
     "img_height": 64,
-    "epochs": 10,
+    "epochs": 20,
     "unet_depth": 5,
     "batch_size": 4,
     "learning_rate": 0.0003,

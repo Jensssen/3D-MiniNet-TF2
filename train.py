@@ -16,13 +16,13 @@ import os
 
 import numpy as np
 import tensorflow as tf
-# from augmentation import augmentation
-from tensorflow.python.framework.ops import disable_eager_execution
 
 from config.config import config
 from datasets.semanticKitti import DataGenerator
 from model.mininet3d import MiniNet3D
 from train_utils import _train_on_batch, _validate_on_batch
+
+# from augmentation import augmentation
 
 # os.environ["CUDA_VISIBLE_DEVICES"]="-1"
 
@@ -133,7 +133,6 @@ def get_learning_rate(iteration, start_rate, decay_interval, decay_value):
 
 
 def image_preprocessing(x):
-    print("lol")
     return x
 
 
@@ -168,7 +167,7 @@ def train():
                                          n_classes=6,
                                          shuffle=True)
 
-    model = MiniNet3D(num_classes=4, input_dim=(2048, 16, 11)).model
+    model = MiniNet3D(num_classes=config['n_classes'], input_dim=(2048, 16, 11)).model
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=config["learning_rate"])
 
@@ -178,13 +177,23 @@ def train():
     # start training
     for epoch in range(config['epochs']):
         print(f'Epoch_number: {epoch}')
+        epoch_train_loss = 0
+        counter = 0
         for idx in range(training_generator.__len__()):
             input_final, x, y = training_generator.__getitem__(idx)
-
             softmax, loss = train_on_batch(x=[input_final, x], y=y, model=model, optimizer=optimizer)
+            epoch_train_loss += loss.numpy()
+            counter += 1
+        print(epoch_train_loss / counter)
 
-            print(loss)
-    print("lol")
+        epoch_val_loss = 0
+        counter = 0
+        for idx in range(validation_generator.__len__()):
+            input_final, x, y = validation_generator.__getitem__(idx)
+            softmax, loss = validate_on_batch(x=[input_final, x], y=y, model=model, optimizer=optimizer)
+            epoch_val_loss += loss.numpy()
+            counter += 1
+        print(epoch_val_loss / counter)
 
 
 if __name__ == "__main__":
