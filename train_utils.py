@@ -10,19 +10,24 @@ Date:
 
 """
 
+from typing import Tuple, List
+
+import numpy as np
 import tensorflow as tf
+
 from config.config import config
 
 
-def _train_on_batch(x, y, model, optimizer):
+@tf.function
+def train_on_batch(x: List[np.ndarray], y: np.ndarray, model: tf.keras.Model, optimizer: tf.keras.optimizers) -> Tuple[
+        tf.Tensor, tf.Tensor]:
     """
 
     Args:
-        images: input images, 4-D Tensor of shape `[batch, height, width, num_channels]
-        labels: input labels, 4-D Tensor of shape `[batch, height, width, num_output_class]
+        x: input images, 4-D Tensor of shape `[batch, height, width, num_channels]
+        y: input labels, 4-D Tensor of shape `[batch, height, width, num_output_class]
         model: tensorflow model
         optimizer: use ONLY tf.keras.optimizers
-        loss_function: the loss function to compute
 
     Returns:
         logits: 4-D Tensor of shape `[batch, height, width, num_output_class]
@@ -30,7 +35,7 @@ def _train_on_batch(x, y, model, optimizer):
 
     """
     with tf.GradientTape() as tape:
-        model_output = model(x, training=True)  # model_output is a list of [softmax, argmax, logits]
+        model_output = model(x, training=True)
         loss = u_net_loss(model_output[0], y)
 
     gradients = tape.gradient(loss, model.trainable_variables)
@@ -39,14 +44,14 @@ def _train_on_batch(x, y, model, optimizer):
     return model_output[1], loss
 
 
-def _validate_on_batch(x, y, model):
+@tf.function
+def validate_on_batch(x: List[np.ndarray], y: np.ndarray, model: tf.keras.Model) -> Tuple[tf.Tensor, tf.Tensor]:
     """
 
     Args:
         x: input images, 4-D Tensor of shape `[batch, height, width, num_channels] from the validation data set
         y: tensor of true targets, 4-D Tensor of shape `[batch, height, width, num_output_class]`
         model: tensorflow model
-        loss_function: the loss function to compute
 
     Returns:
         logits: 4-D Tensor of shape `[batch, height, width, num_output_class]
@@ -116,6 +121,5 @@ def u_net_loss(pred, label):
             iou = tf.reduce_sum(tf.cast(tf.logical_and(intersection, mask_bin), tf.float32)) / (
                     tf.reduce_sum(tf.cast(tf.logical_and(union, mask_bin), tf.float32)) + 0.00000001)
             print(c, iou)
-
 
     return loss

@@ -18,7 +18,6 @@ config = {
     "augmentation": ["original"],
     "n_size": [3, 3],
     "channels": "xyzdr",
-    "pointnet": True,
     "n_classes": 4,
     "img_width": 512,
     "img_height": 64,
@@ -32,7 +31,7 @@ config = {
     "num_iterations": 1000000,
     "val_interval": 10,
     "path": "training_pnl2/",
-    "logs": "logs/",
+    "tensorboard_log": "./tensorboard_log/",
     "model": "model.ckpt",
     "save_interval": 2000,
     "output_path": "validation/"

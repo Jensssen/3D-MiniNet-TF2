@@ -10,9 +10,10 @@ Date:
 
 """
 
+import argparse
 import glob
-import math
 import os
+import time
 
 import numpy as np
 import tensorflow as tf
@@ -20,19 +21,89 @@ import tensorflow as tf
 from config.config import config
 from datasets.semanticKitti import DataGenerator
 from model.mininet3d import MiniNet3D
-from train_utils import _train_on_batch, _validate_on_batch
+from train_utils import train_on_batch, validate_on_batch
 
-# from augmentation import augmentation
+physical_devices = tf.config.list_physical_devices("GPU")
+tf.config.experimental.set_memory_growth(physical_devices[0], True)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-# os.environ["CUDA_VISIBLE_DEVICES"]="-1"
+import logging
+
+logger = logging.getLogger("tensorflow")
+logger.setLevel(logging.DEBUG)
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--use_pretrained_weights", default=False, required=False,
+                    help="Set to True if you want to load pretrained weights from ./saved_model/weights.h5")
+args = parser.parse_args()
 
 
-physical_devices = tf.config.list_physical_devices('GPU')
-try:
-    tf.config.experimental.set_memory_growth(physical_devices[0], True)
-except:
-    # Invalid device or cannot modify virtual devices once initialized.
-    pass
+class MeanIoU(object):
+    """Mean intersection over union (mIoU) metric.
+    Intersection over union (IoU) is a common evaluation metric for semantic
+    segmentation. The predictions are first accumulated in a confusion matrix
+    and the IoU is computed from it as follows:
+        IoU = true_positive / (true_positive + false_positive + false_negative).
+    The mean IoU is the mean of IoU between all classes.
+    Keyword arguments:
+        num_classes (int): number of classes in the classification problem.
+    """
+
+    def __init__(self, num_classes):
+        super().__init__()
+
+        self.num_classes = num_classes
+
+    def mean_iou(self, y_true, y_pred):
+        """The metric function to be passed to the model.
+        Args:
+            y_true (tensor): True labels.
+            y_pred (tensor): Predictions of the same shape as y_true.
+        Returns:
+            The mean intersection over union as a tensor.
+        """
+        # Wraps _mean_iou function and uses it as a TensorFlow op.
+        # Takes numpy arrays as its arguments and returns numpy arrays as
+        # its outputs.
+        return tf.py_function(self._mean_iou, [y_true, y_pred], tf.float32)
+
+    def _mean_iou(self, y_true, y_pred):
+        """Computes the mean intesection over union using numpy.
+        Args:
+            y_true (tensor): True labels.
+            y_pred (tensor): Predictions of the same shape as y_true.
+        Returns:
+            The mean intersection over union (np.float32).
+        """
+        # Compute the confusion matrix to get the number of true positives,
+        # false positives, and false negatives
+        # Convert predictions and target from categorical to integer format
+        target = np.argmax(y_true, axis=-1).ravel()
+        predicted = np.argmax(y_pred, axis=-1).ravel()
+
+        # Trick for bincounting 2 arrays together
+        x = predicted + self.num_classes * target
+        bincount_2d = np.bincount(
+            x.astype(np.int32), minlength=self.num_classes ** 2
+        )
+        assert bincount_2d.size == self.num_classes ** 2
+        conf = bincount_2d.reshape(
+            (self.num_classes, self.num_classes)
+        )
+
+        # Compute the IoU and mean IoU from the confusion matrix
+        true_positive = np.diag(conf)
+        false_positive = np.sum(conf, 0) - true_positive
+        false_negative = np.sum(conf, 1) - true_positive
+
+        # Just in case we get a division by 0, ignore/hide the error and
+        # set the value to 1 since we predicted 0 pixels for that class and
+        # and the batch has 0 pixels for that same class
+        with np.errstate(divide='ignore', invalid='ignore'):
+            iou = true_positive / (true_positive + false_positive + false_negative)
+        iou[np.isnan(iou)] = 1
+
+        return iou
 
 
 # Takes a sequence of channels and returns the corresponding indices in the rangeimage
@@ -94,18 +165,10 @@ def read_example(filename, batch_size):
 # Displays configuration
 def print_config():
     print("\n----------- RIU-NET CONFIGURATION -----------")
-    print("input channels     : {}".format(CONFIG.CHANNELS.upper()))
-    print("input dims         : {}x{}x{}".format(CONFIG.IMAGE_HEIGHT, CONFIG.IMAGE_WIDTH, CONFIG.IMAGE_DEPTH))
-    print("pointnet embeddings: {}".format("yes" if CONFIG.POINTNET == True else "no"))
-    print("focal loss         : {}".format("yes" if CONFIG.FOCAL_LOSS == True else "no"))
-    print(
-        "# of parameters    : {}".format(np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])))
+    print(f"input channels     : {config['channels'].upper()}")
+    print(f"input dims         : {config.get('img_height')}x{config.get('img_width')}x{len(config.get('channels'))}")
+    print(f"focal loss         : {'yes' if config.get('focal_loss') else 'no'}")
     print("---------------------------------------------\n")
-
-
-# Compute the average example processing time
-def time_to_speed(batch_time, batch_size):
-    return round(float(batch_size) / batch_time, 2)
 
 
 # Pretty obvious
@@ -126,12 +189,6 @@ def get_last_checkpoint(output_model):
     return max(checkpoints)
 
 
-# Computes current learning rate given the decay settings
-def get_learning_rate(iteration, start_rate, decay_interval, decay_value):
-    rate = start_rate * (decay_value ** math.floor(iteration / decay_interval))
-    return rate
-
-
 def image_preprocessing(x):
     return x
 
@@ -142,14 +199,11 @@ def mask_preprocessing(x):
 
 
 def train():
-    for dataset in ["train", "val"]:
-        if dataset == "val":
-            validation_file_list = open("./data/semantic_val.txt", "r")
-            validation_file_list = [line.replace("\n", "") for line in validation_file_list.readlines()]
+    validation_file_list = open("./data/semantic_val.txt", "r")
+    validation_file_list = [line.replace("\n", "") for line in validation_file_list.readlines()]
 
-        else:
-            train_file_list = open("./data/semantic_train.txt", "r")
-            train_file_list = [line.replace("\n", "") for line in train_file_list.readlines()]
+    train_file_list = open("./data/semantic_train.txt", "r")
+    train_file_list = [line.replace("\n", "") for line in train_file_list.readlines()]
 
     # Datasets
     partition = {'train': train_file_list, 'validation': validation_file_list}
@@ -169,35 +223,81 @@ def train():
                                          shuffle=False,
                                          data_split="val")
 
+    lr_method = tf.keras.optimizers.schedules.ExponentialDecay(
+        config.get('learning_rate'), config.get('lr_decay_interval'), config.get('lr_decay_value'), staircase=True,
+        name="exponential_decay_lr"
+    )
+
     model = MiniNet3D(num_classes=config['n_classes'], input_dim=(2048, 16, 11)).model
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=config["learning_rate"])
+    optimizer = tf.keras.optimizers.Adam(learning_rate=lr_method)
 
-    train_on_batch = tf.function(_train_on_batch)
-    validate_on_batch = tf.function(_validate_on_batch)
+    if args.use_pretrained_weights == "True":
+        model.load_weights('./saved_model/weights.h5')
+
+    train_summary_writer = tf.summary.create_file_writer(os.path.join(config['tensorboard_log'], "train"))
+    val_summary_writer = tf.summary.create_file_writer(os.path.join(config['tensorboard_log'], "val"))
+
+    tb_train_loss = tf.keras.metrics.Mean(name='loss')
+    tb_val_loss = tf.keras.metrics.Mean(name='loss')
+
+    print_config()
     best_validation_loss = 1000
     # start training
     for epoch in range(config['epochs']):
-        print(f'Epoch_number: {epoch}')
-        epoch_train_loss = 0
-        counter = 0
-        for idx in range(training_generator.__len__()):
-            input_final, x, y = training_generator.__getitem__(idx)
-            softmax, loss = train_on_batch(x=[input_final, x], y=y, model=model, optimizer=optimizer)
-            epoch_train_loss += loss.numpy()
-            counter += 1
-        print(epoch_train_loss / counter)
+        logger.info(f'Epoch_number: {epoch}')
 
-        epoch_val_loss = 0
-        counter = 0
-        for idx in range(validation_generator.__len__()):
-            input_final, x, y = validation_generator.__getitem__(idx)
+        tb_train_loss.reset_states()
+        tb_val_loss.reset_states()
+
+        for batch_idx, (input_final, x, y) in enumerate(training_generator, 1):
+            # points_data, label_data = augmentation(points_data, y)
+            softmax, loss = train_on_batch(x=[input_final, x], y=y, model=model, optimizer=optimizer)
+            tb_train_loss.update_state(loss.numpy())
+
+            if batch_idx % 200 == 0:
+                logger.info(
+                    f"[Training] Epoch: {epoch}, "
+                    f"Iteration: {batch_idx * config.get('batch_size') + epoch * training_generator.__len__()}, "
+                    f"loss: {loss.numpy()}, lr: {optimizer.learning_rate(optimizer.iterations).numpy()}")
+
+        logger.info(
+            f"Mean epoch loss: {tb_train_loss.result().numpy()}"
+        )
+        with train_summary_writer.as_default():
+            tf.summary.scalar("Loss", tb_train_loss.result(), step=epoch)
+            tf.summary.scalar("Learning Rate", optimizer.learning_rate(optimizer.iterations).numpy(), step=epoch)
+
+        for batch_idx, (input_final, x, y) in enumerate(validation_generator, 1):
             softmax, loss = validate_on_batch(x=[input_final, x], y=y, model=model)
-            epoch_val_loss += loss.numpy()
-            counter += 1
-        print(epoch_val_loss / counter)
-        if epoch_val_loss/counter < best_validation_loss:
-            tf.saved_model.save(model, "./saved_model")
+            tb_val_loss.update_state(loss.numpy())
+
+            if batch_idx % 200 == 0:
+                logger.info(
+                    f"[Validation] Epoch: {epoch}, "
+                    f"Iteration: {batch_idx * config.get('batch_size') + epoch * training_generator.__len__()}, "
+                    f"loss: {loss.numpy()}, lr: {optimizer.learning_rate(optimizer.iterations).numpy()}")
+
+        logger.info(
+            f"Mean epoch loss: {tb_val_loss.result().numpy()}"
+        )
+        with val_summary_writer.as_default():
+            tf.summary.scalar("Loss", tb_val_loss.result(), step=epoch)
+
+        # print(f"Validation loss: {epoch_val_loss / batch_idx}")
+        # if epoch_val_loss / batch_idx < best_validation_loss:
+        #     best_validation_loss = epoch_val_loss / batch_idx
+        # tf.saved_model.save(model, "./saved_model")
+        # model.save_weights('./saved_model/weights.h5')
+        # for idx in range(0, 50):
+        #     input_final, x, y = validation_generator.__getitem__(idx)
+        # softmax, loss = train_on_batch(x=[input_final, x], y=y, model=model, optimizer=optimizer)
+        # for batch_id, image in enumerate(softmax):
+        #     gt = y[batch_id, :, :, 0] * 255
+        # input = x[batch_id, :, :, 3] * 255
+        # argmax = np.argmax(image.numpy(), axis=-1) * 85
+        # image = np.concatenate((input, gt, argmax), axis=0)
+        # cv2.imwrite(f"./saved_model/{idx}_{batch_id}.png", image)
 
 
 if __name__ == "__main__":
