@@ -130,3 +130,9 @@ dmypy.json
 
 # pycharm
 .idea
+
+data/lidar_2d
+data/train
+data/val
+
+tensorboard_log
