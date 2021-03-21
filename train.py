@@ -13,11 +13,12 @@ Date:
 import argparse
 import glob
 import os
-import time
 
+import cv2
 import numpy as np
 import tensorflow as tf
 
+from augmentation import augmentation
 from config.config import config
 from datasets.semanticKitti import DataGenerator
 from model.mininet3d import MiniNet3D
@@ -38,74 +39,6 @@ parser.add_argument("--use_pretrained_weights", default=False, required=False,
 args = parser.parse_args()
 
 
-class MeanIoU(object):
-    """Mean intersection over union (mIoU) metric.
-    Intersection over union (IoU) is a common evaluation metric for semantic
-    segmentation. The predictions are first accumulated in a confusion matrix
-    and the IoU is computed from it as follows:
-        IoU = true_positive / (true_positive + false_positive + false_negative).
-    The mean IoU is the mean of IoU between all classes.
-    Keyword arguments:
-        num_classes (int): number of classes in the classification problem.
-    """
-
-    def __init__(self, num_classes):
-        super().__init__()
-
-        self.num_classes = num_classes
-
-    def mean_iou(self, y_true, y_pred):
-        """The metric function to be passed to the model.
-        Args:
-            y_true (tensor): True labels.
-            y_pred (tensor): Predictions of the same shape as y_true.
-        Returns:
-            The mean intersection over union as a tensor.
-        """
-        # Wraps _mean_iou function and uses it as a TensorFlow op.
-        # Takes numpy arrays as its arguments and returns numpy arrays as
-        # its outputs.
-        return tf.py_function(self._mean_iou, [y_true, y_pred], tf.float32)
-
-    def _mean_iou(self, y_true, y_pred):
-        """Computes the mean intesection over union using numpy.
-        Args:
-            y_true (tensor): True labels.
-            y_pred (tensor): Predictions of the same shape as y_true.
-        Returns:
-            The mean intersection over union (np.float32).
-        """
-        # Compute the confusion matrix to get the number of true positives,
-        # false positives, and false negatives
-        # Convert predictions and target from categorical to integer format
-        target = np.argmax(y_true, axis=-1).ravel()
-        predicted = np.argmax(y_pred, axis=-1).ravel()
-
-        # Trick for bincounting 2 arrays together
-        x = predicted + self.num_classes * target
-        bincount_2d = np.bincount(
-            x.astype(np.int32), minlength=self.num_classes ** 2
-        )
-        assert bincount_2d.size == self.num_classes ** 2
-        conf = bincount_2d.reshape(
-            (self.num_classes, self.num_classes)
-        )
-
-        # Compute the IoU and mean IoU from the confusion matrix
-        true_positive = np.diag(conf)
-        false_positive = np.sum(conf, 0) - true_positive
-        false_negative = np.sum(conf, 1) - true_positive
-
-        # Just in case we get a division by 0, ignore/hide the error and
-        # set the value to 1 since we predicted 0 pixels for that class and
-        # and the batch has 0 pixels for that same class
-        with np.errstate(divide='ignore', invalid='ignore'):
-            iou = true_positive / (true_positive + false_positive + false_negative)
-        iou[np.isnan(iou)] = 1
-
-        return iou
-
-
 # Takes a sequence of channels and returns the corresponding indices in the rangeimage
 def seq_to_idx(seq):
     idx = []
@@ -122,45 +55,6 @@ def seq_to_idx(seq):
 
     return np.array(idx, dtype=np.intp)
 
-
-# Loads a queue of random examples, and returns a batch iterator for each input
-# and output
-def read_example(filename, batch_size):
-    # Open tfrecord
-    reader = tf.TFRecordReader()
-    filename_queue = tf.train.string_input_producer([filename], num_epochs=None)
-    _, serialized_example = reader.read(filename_queue)
-
-    # Create random queue
-    min_queue_examples = 500
-    batch = tf.train.shuffle_batch([serialized_example], batch_size=batch_size,
-                                   capacity=min_queue_examples + 100 * batch_size, min_after_dequeue=min_queue_examples,
-                                   num_threads=2)
-
-    # Read a batch
-    parsed_example = tf.parse_example(batch, features={'neighbors': tf.FixedLenFeature([], tf.string),
-                                                       'points': tf.FixedLenFeature([], tf.string),
-                                                       'label': tf.FixedLenFeature([], tf.string)})
-
-    # Decode point cloud
-    idx = seq_to_idx(CONFIG.CHANNELS)
-
-    points_raw = tf.decode_raw(parsed_example['points'], tf.float32)
-    points = tf.reshape(points_raw, [batch_size, CONFIG.IMAGE_HEIGHT * CONFIG.IMAGE_WIDTH, 1, 5])
-    points = tf.gather(points, seq_to_idx(CONFIG.CHANNELS), axis=3)
-
-    neighbors_raw = tf.decode_raw(parsed_example['neighbors'], tf.float32)
-    neighbors = tf.reshape(neighbors_raw, [batch_size, CONFIG.IMAGE_HEIGHT * CONFIG.IMAGE_WIDTH, CONFIG.N_LEN, 5])
-    neighbors = tf.gather(neighbors, seq_to_idx(CONFIG.CHANNELS), axis=3)
-
-    # Decode label
-    label_raw = tf.decode_raw(parsed_example['label'], tf.float32)
-    label = tf.reshape(label_raw, [batch_size, CONFIG.IMAGE_HEIGHT, CONFIG.IMAGE_WIDTH, CONFIG.N_CLASSES + 2])
-
-    return points, neighbors, label
-
-
-############################ TRAINING MANAGER ############################
 
 # Displays configuration
 def print_config():
@@ -194,7 +88,6 @@ def image_preprocessing(x):
 
 
 def mask_preprocessing(x):
-    print("ddd")
     return x
 
 
@@ -251,7 +144,7 @@ def train():
         tb_val_loss.reset_states()
 
         for batch_idx, (input_final, x, y) in enumerate(training_generator, 1):
-            # points_data, label_data = augmentation(points_data, y)
+            x, y = augmentation(x, y)
             softmax, loss = train_on_batch(x=[input_final, x], y=y, model=model, optimizer=optimizer)
             tb_train_loss.update_state(loss.numpy())
 
@@ -259,10 +152,10 @@ def train():
                 logger.info(
                     f"[Training] Epoch: {epoch}, "
                     f"Iteration: {batch_idx * config.get('batch_size') + epoch * training_generator.__len__()}, "
-                    f"loss: {loss.numpy()}, lr: {optimizer.learning_rate(optimizer.iterations).numpy()}")
+                    f"loss: {tb_train_loss.result().numpy()}, lr: {optimizer.learning_rate(optimizer.iterations).numpy()}")
 
         logger.info(
-            f"Mean epoch loss: {tb_train_loss.result().numpy()}"
+            f"Mean train epoch {epoch} loss: {tb_train_loss.result().numpy()}"
         )
         with train_summary_writer.as_default():
             tf.summary.scalar("Loss", tb_train_loss.result(), step=epoch)
@@ -276,28 +169,29 @@ def train():
                 logger.info(
                     f"[Validation] Epoch: {epoch}, "
                     f"Iteration: {batch_idx * config.get('batch_size') + epoch * training_generator.__len__()}, "
-                    f"loss: {loss.numpy()}, lr: {optimizer.learning_rate(optimizer.iterations).numpy()}")
+                    f"loss: {tb_val_loss.result().numpy()}, lr: {optimizer.learning_rate(optimizer.iterations).numpy()}")
 
         logger.info(
-            f"Mean epoch loss: {tb_val_loss.result().numpy()}"
+            f"Mean validation epoch {epoch} loss: {tb_val_loss.result().numpy()}"
         )
         with val_summary_writer.as_default():
             tf.summary.scalar("Loss", tb_val_loss.result(), step=epoch)
 
-        # print(f"Validation loss: {epoch_val_loss / batch_idx}")
-        # if epoch_val_loss / batch_idx < best_validation_loss:
-        #     best_validation_loss = epoch_val_loss / batch_idx
-        # tf.saved_model.save(model, "./saved_model")
-        # model.save_weights('./saved_model/weights.h5')
-        # for idx in range(0, 50):
-        #     input_final, x, y = validation_generator.__getitem__(idx)
-        # softmax, loss = train_on_batch(x=[input_final, x], y=y, model=model, optimizer=optimizer)
-        # for batch_id, image in enumerate(softmax):
-        #     gt = y[batch_id, :, :, 0] * 255
-        # input = x[batch_id, :, :, 3] * 255
-        # argmax = np.argmax(image.numpy(), axis=-1) * 85
-        # image = np.concatenate((input, gt, argmax), axis=0)
-        # cv2.imwrite(f"./saved_model/{idx}_{batch_id}.png", image)
+        if tb_val_loss.result().numpy() < best_validation_loss:
+            best_validation_loss = tb_val_loss.result().numpy()
+            tf.saved_model.save(model, "./saved_model")
+            model.save_weights('./saved_model/weights.h5')
+            if not os.path.exists("./validation_results"):
+                os.makedirs("./validation_results")
+            for idx in range(0, 50):
+                input_final, x, y = validation_generator.__getitem__(idx)
+                softmax, loss = validate_on_batch(x=[input_final, x], y=y, model=model)
+                for batch_id, image in enumerate(softmax):
+                    gt = y[batch_id, :, :, 0] * 255
+                    input = x[batch_id, :, :, 3] * 255
+                    argmax = np.argmax(image.numpy(), axis=-1) * 85
+                    image = np.concatenate((input, gt, argmax), axis=0)
+                    cv2.imwrite(f"./validation_results/{idx}_{batch_id}.png", image)
 
 
 if __name__ == "__main__":

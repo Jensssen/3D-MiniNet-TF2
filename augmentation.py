@@ -124,10 +124,10 @@ def augmentation(points_data, label_data):
         label_data[b, :, :, 4] = label5
         label_data[b, :, :, 5] = label6
 
-        points_data[b, :, :, 4] = np.reshape(depth, (32768, 1))
-        points_data[b, :, :, 3] = np.reshape(remission, (32768, 1))
-        points_data[b, :, :, 2] = np.reshape(z, (32768, 1))
-        points_data[b, :, :, 1] = np.reshape(y, (32768, 1))
-        points_data[b, :, :, 0] = np.reshape(x, (32768, 1))
+        points_data[b, :, :, 4] = depth
+        points_data[b, :, :, 3] = remission
+        points_data[b, :, :, 2] = z
+        points_data[b, :, :, 1] = y
+        points_data[b, :, :, 0] = x
 
     return points_data, label_data
