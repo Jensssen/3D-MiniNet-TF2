@@ -181,17 +181,6 @@ def train():
             best_validation_loss = tb_val_loss.result().numpy()
             tf.saved_model.save(model, "./saved_model")
             model.save_weights('./saved_model/weights.h5')
-            if not os.path.exists("./validation_results"):
-                os.makedirs("./validation_results")
-            for idx in range(0, 50):
-                input_final, x, y = validation_generator.__getitem__(idx)
-                softmax, loss = validate_on_batch(x=[input_final, x], y=y, model=model)
-                for batch_id, image in enumerate(softmax):
-                    gt = y[batch_id, :, :, 0] * 255
-                    input = x[batch_id, :, :, 3] * 255
-                    argmax = np.argmax(image.numpy(), axis=-1) * 85
-                    image = np.concatenate((input, gt, argmax), axis=0)
-                    cv2.imwrite(f"./validation_results/{idx}_{batch_id}.png", image)
 
 
 if __name__ == "__main__":
