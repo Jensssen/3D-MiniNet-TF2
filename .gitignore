@@ -136,4 +136,7 @@ data/vlp32
 data/train
 data/val
 
+saved_model
+test_results
+
 tensorboard_log
