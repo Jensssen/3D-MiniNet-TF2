@@ -132,6 +132,7 @@ dmypy.json
 .idea
 
 data/lidar_2d
+data/vlp32
 data/train
 data/val
 

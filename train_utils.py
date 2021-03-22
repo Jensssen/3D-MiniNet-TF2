@@ -105,21 +105,4 @@ def u_net_loss(pred, label):
                                             [config["batch_size"], config["img_height"], config["img_width"],
                                              1]) * weights_ce) / tf.reduce_sum(weights_ce)
 
-    # Compute average precision
-    with tf.name_scope('average_precision'):
-        softmax_pred = tf.nn.softmax(pred)
-
-        argmax_pred = tf.math.argmax(softmax_pred, axis=3)
-        mask_bin = tf.squeeze(tf.math.greater(mask, 0))
-        for c in range(1, config["n_classes"]):
-            p = tf.math.equal(argmax_pred, c)
-            l = tf.squeeze(tf.math.equal(slice_tensor(label, c, c), 1.0))
-
-            intersection = tf.logical_and(p, l)
-            union = tf.logical_or(p, l)
-
-            iou = tf.reduce_sum(tf.cast(tf.logical_and(intersection, mask_bin), tf.float32)) / (
-                    tf.reduce_sum(tf.cast(tf.logical_and(union, mask_bin), tf.float32)) + 0.00000001)
-            print(c, iou)
-
     return loss
